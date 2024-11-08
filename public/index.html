@@ -1,0 +1,79 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jira Tasks Chat</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        #chat-container { border: 1px solid #ccc; height: 400px; overflow-y: scroll; padding: 10px; margin-bottom: 20px; }
+        #user-input { width: 70%; padding: 10px; }
+        #send-button { padding: 10px 20px; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+    </style>
+</head>
+<body>
+    <h1>Jira Tasks Chat</h1>
+    <div id="chat-container"></div>
+    <input type="text" id="user-input" placeholder="Type your message...">
+    <button id="send-button">Send</button>
+
+    <script>
+        const chatContainer = document.getElementById('chat-container');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+
+        function addMessage(role, content) {
+            const messageElement = document.createElement('div');
+            messageElement.innerHTML = '<strong>' + role + ':</strong> <pre>' + content + '</pre>';
+            chatContainer.appendChild(messageElement);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (message) {
+                addMessage('You', message);
+                userInput.value = '';
+
+                try {
+                    const response = await fetch('/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ message }),
+                    });
+
+                    if (response.ok) {
+                        const reader = response.body.getReader();
+                        const decoder = new TextDecoder();
+                        let assistantResponse = '';
+
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            assistantResponse += decoder.decode(value);
+                        }
+                        addMessage('Assistant', assistantResponse.trim());
+                    } else {
+                        console.error('Error:', response.statusText);
+                        addMessage('System', 'An error occurred while processing your request.');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    addMessage('System', 'An error occurred while sending your message.');
+                }
+            }
+        }
+
+        sendButton.addEventListener('click', sendMessage);
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
