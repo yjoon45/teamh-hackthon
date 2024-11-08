@@ -125,11 +125,21 @@ function extractName(message) {
     /(?:name is|full name is|call me) ([\w\s]+)/i
   );
   const usernameMatch = message.match(/(?:username is|user is) (\w+)/i);
+  const assignedToMatch = message.match(
+    /(?:get ticket(?:s)? assigned to|show me tasks for user) ([\w\s]+)/i
+  );
 
   if (fullNameMatch) {
     return { fullName: fullNameMatch[1].trim(), username: "" };
   } else if (usernameMatch) {
     return { fullName: "", username: usernameMatch[1].trim() };
+  } else if (assignedToMatch) {
+    const name = assignedToMatch[1].trim();
+    if (name.includes(" ")) {
+      return { fullName: name, username: "" };
+    } else {
+      return { fullName: "", username: name };
+    }
   }
   return null;
 }
@@ -187,30 +197,28 @@ app.post("/chat", async (req, res) => {
 });
 
 async function analyzeQuery(userInput, taskData, lastUsedName) {
+  const assigneeName = lastUsedName.fullName || lastUsedName.username;
+  const isRiskAnalysisRequested = userInput.toLowerCase().includes("risk");
+
   const systemPrompt = `
-You are an AI assistant designed to analyze Jira task data and respond to user queries. Your primary functions are:
+    You are an AI assistant designed to analyze JIRA tickets. Your task is to:
 
-1. Maintain context about the user (username or full name) across multiple queries.
-2. Analyze Jira task data, focusing on identifying risks such as overspent tickets.
-3. Provide relevant information based on user queries, highlighting risks only when explicitly asked.
+    1. Always provide a summary of the tickets assigned to ${assigneeName}.
+    2. If specifically requested, perform a risk analysis for delayed delivery.
 
-Guidelines:
-1. Always use the last known username or full name unless the user provides a new one.
-2. When analyzing tasks, consider a task "at risk" if logged hours exceed estimated hours.
-3. Only provide risk information when the user explicitly asks about risks or overspent tickets.
-4. Keep responses concise and directly relevant to the user's query.
+    For the risk analysis, evaluate each ticket based on:
+    • Assignee: Confirm it's assigned to ${assigneeName}.
+    • Start Date: Check if it started on time relative to the due date.
+    • Due Date: Assess if it's approaching and if the ticket is on track.
+    • Original Estimate vs. Logged Hours: Check if logged hours exceed the estimate.
 
-Response Format:
-1. If a new name is provided or it's the first query:
-   "Using name: [username or full name]"
-2. Task Analysis (always include unless no tasks are found):
-   - List all tasks with their key, summary, dates, and hours.
-3. Risk Analysis (only if explicitly requested):
-   "Risk Alert: The following tasks have exceeded their estimated hours:
-   - [Task Key]: Logged [X] hours, Estimated [Y] hours. Overspent by [Z] hours."
-4. Conclude with a brief summary or any relevant insights based on the user's query.
-5. If username is changed then don't show the risk when user ask specifically for risk statement only then show the risk.
-`;
+    For each ticket in the risk analysis, provide:
+    1. A brief assessment based on the above parameters.
+    2. A risk level (High Risk, At Risk, or On Track).
+    3. Recommendations if the ticket appears at risk.
+
+    Keep your responses concise and relevant to the user's query.
+  `;
 
   try {
     const result = await generateText({
@@ -219,9 +227,13 @@ Response Format:
         { role: "system", content: systemPrompt },
         {
           role: "user",
-          content: `Current name in use: ${
-            lastUsedName.fullName || lastUsedName.username
-          }. User query: ${userInput}. Task data: ${JSON.stringify(taskData)}`,
+          content: `User query: ${userInput}. Task data: ${JSON.stringify(
+            taskData
+          )}. ${
+            isRiskAnalysisRequested
+              ? "Perform a risk analysis."
+              : "Provide only a summary of the tickets."
+          }`,
         },
       ],
     });
